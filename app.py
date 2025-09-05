@@ -1,93 +1,83 @@
+# app.py
 import streamlit as st
 from textblob import TextBlob
+import spacy
 
-st.title("Corretor de Redações UFRGS (Versão Gratuita)")
-
-# Entrada do usuário
-tema = st.text_input("Informe o tema da redação:")
-texto = st.text_area("Cole sua redação aqui:")
+# Carrega modelo em português
+try:
+    nlp = spacy.load("pt_core_news_sm")
+except:
+    import os
+    os.system("python -m spacy download pt_core_news_sm")
+    nlp = spacy.load("pt_core_news_sm")
 
 # Funções auxiliares
-def contar_linhas(texto):
-    linhas = [l for l in texto.strip().split("\n") if l.strip() != ""]
-    return len(linhas)
+def verificar_linhas(texto, min_linhas=20, max_linhas=30):
+    linhas = texto.strip().split('\n')
+    num_linhas = len([l for l in linhas if l.strip() != ''])
+    dentro_limite = min_linhas <= num_linhas <= max_linhas
+    return num_linhas, dentro_limite
 
-def extrair_palavras_chave(texto):
-    blob = TextBlob(texto)
-    keywords = [word.lower() for (word, tag) in blob.tags if tag.startswith('NN')]
-    return list(set(keywords))
+def contar_palavras_chave(texto, palavras_chave):
+    texto_lower = texto.lower()
+    presentes = [p for p in palavras_chave if p.lower() in texto_lower]
+    return presentes, len(presentes)
 
-def avaliar_redacao(texto, tema):
-    feedback = {}
-    
-    # Linhas
-    linhas = contar_linhas(texto)
-    if linhas < 25:
-        estrutura = 5
-        feedback['Estrutura'] = f"Redação muito curta ({linhas} linhas)."
-    elif linhas > 30:
-        estrutura = 6
-        feedback['Estrutura'] = f"Redação muito longa ({linhas} linhas)."
-    else:
-        estrutura = 8
-        feedback['Estrutura'] = f"Redação dentro do tamanho adequado ({linhas} linhas)."
-    
-    # Tema
-    if tema.lower() in texto.lower():
-        conteudo = 8
-        tema_cumprido = "Sim"
-        feedback['Conteúdo'] = "Texto adequado ao tema."
-    else:
-        conteudo = 4
-        tema_cumprido = "Não"
-        feedback['Conteúdo'] = "O texto não está totalmente relacionado ao tema."
-    
-    # Linguagem
+def analisar_gramatica(texto):
     blob = TextBlob(texto)
-    erros_ort = len(blob.correct().split()) - len(texto.split())
-    if erros_ort <= 2:
-        linguagem = 7
-        feedback['Linguagem'] = "Poucos erros gramaticais."
-    elif erros_ort <= 5:
-        linguagem = 5
-        feedback['Linguagem'] = f"Alguns erros gramaticais ({erros_ort} erros)."
-    else:
-        linguagem = 3
-        feedback['Linguagem'] = f"Muitos erros gramaticais ({erros_ort} erros)."
+    erros = len(blob.correct().split()) - len(blob.words)
+    return max(erros, 0)
+
+def analisar_coesao(texto):
+    # Simplificação: mede a presença de conectivos
+    conectivos = ["portanto", "entretanto", "além disso", "por outro lado", "assim"]
+    presentes = [c for c in conectivos if c in texto.lower()]
+    indice = len(presentes)/len(conectivos)
+    return round(indice*100, 1)  # %
     
-    # Argumentação/Coesão
-    sentencas = blob.sentences
-    media_palavras = sum(len(s.words) for s in sentencas)/len(sentencas) if len(sentencas)>0 else 0
-    if media_palavras > 10:
-        argumentacao = 7
-        feedback['Argumentação'] = "Boa argumentação e coesão."
-    else:
-        argumentacao = 4
-        feedback['Argumentação'] = "Fraca argumentação; frases muito curtas."
+def pontuar_redacao(texto):
+    # Critérios simulados UFRGS: Conteúdo, Coesão, Linguagem, Estrutura
+    conteudo = min(len(texto)/500,1) * 10
+    coesao = analisar_coesao(texto)/10
+    gramatica = max(10 - analisar_gramatica(texto)/2, 0)
+    estrutura = 10 if len(texto.split()) > 100 else 7
     
-    # Nota final
-    nota_final = conteudo + estrutura + linguagem + argumentacao
-    palavras_chave = extrair_palavras_chave(texto)
+    nota_total = round((conteudo + coesao + gramatica + estrutura)/4,1)
     
-    return {
-        "nota": round(nota_final,1),
-        "feedback": feedback,
-        "palavras_chave": palavras_chave,
-        "linhas": linhas,
-        "tema_cumprido": tema_cumprido
+    feedback = {
+        "Conteúdo": round(conteudo,1),
+        "Coesão": round(coesao,1),
+        "Gramática": round(gramatica,1),
+        "Estrutura": estrutura,
+        "Nota final estimada": nota_total
     }
+    return feedback
 
-# Botão de correção
+# Streamlit interface
+st.title("Corretor de Redações - UFRGS (Simulado)")
+
+texto = st.text_area("Cole sua redação aqui:", height=300)
+palavras_chave_input = st.text_input("Palavras-chave (separadas por vírgula):")
+palavras_chave = [p.strip() for p in palavras_chave_input.split(',') if p.strip()]
+
+min_linhas = st.number_input("Mínimo de linhas:", value=20)
+max_linhas = st.number_input("Máximo de linhas:", value=30)
+
 if st.button("Corrigir Redação"):
-    if not texto.strip() or not tema.strip():
-        st.warning("Preencha o tema e a redação.")
+    if texto.strip() == "":
+        st.warning("Digite sua redação para análise.")
     else:
-        resultado = avaliar_redacao(texto, tema)
-        st.subheader(f"Nota final: {resultado['nota']}/30")
-        st.subheader("Feedback detalhado:")
-        for crit, msg in resultado['feedback'].items():
-            st.write(f"**{crit}**: {msg}")
-        st.subheader("Palavras-chave detectadas:")
-        st.write(", ".join(resultado['palavras_chave']))
-        st.write(f"Número de linhas: {resultado['linhas']}")
-        st.write(f"Tema cumprido: {resultado['tema_cumprido']}")
+        num_linhas, dentro_limite = verificar_linhas(texto, min_linhas, max_linhas)
+        st.write(f"Número de linhas: {num_linhas} - Dentro do limite? {dentro_limite}")
+        
+        feedback = pontuar_redacao(texto)
+        st.subheader("Notas por critério:")
+        for k, v in feedback.items():
+            st.write(f"{k}: {v}")
+        
+        if palavras_chave:
+            presentes, total = contar_palavras_chave(texto, palavras_chave)
+            st.subheader("Palavras-chave encontradas:")
+            st.write(f"{presentes} ({total}/{len(palavras_chave)})")
+        
+        st.success("Análise concluída!")
