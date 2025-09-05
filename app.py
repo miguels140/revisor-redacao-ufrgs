@@ -2,16 +2,19 @@
 import streamlit as st
 from textblob import TextBlob
 import spacy
+import os
 
-# Carrega modelo em português
+st.set_page_config(page_title="Corretor de Redações UFRGS", layout="wide")
+
+# Tenta carregar modelo português do spaCy, se não existir, baixa
 try:
     nlp = spacy.load("pt_core_news_sm")
-except:
-    import os
+except OSError:
     os.system("python -m spacy download pt_core_news_sm")
     nlp = spacy.load("pt_core_news_sm")
 
-# Funções auxiliares
+# ---------------- Funções ----------------
+
 def verificar_linhas(texto, min_linhas=20, max_linhas=30):
     linhas = texto.strip().split('\n')
     num_linhas = len([l for l in linhas if l.strip() != ''])
@@ -29,31 +32,31 @@ def analisar_gramatica(texto):
     return max(erros, 0)
 
 def analisar_coesao(texto):
-    # Simplificação: mede a presença de conectivos
     conectivos = ["portanto", "entretanto", "além disso", "por outro lado", "assim"]
     presentes = [c for c in conectivos if c in texto.lower()]
-    indice = len(presentes)/len(conectivos)
-    return round(indice*100, 1)  # %
-    
+    indice = len(presentes) / len(conectivos)
+    return round(indice * 100, 1)  # %
+
 def pontuar_redacao(texto):
     # Critérios simulados UFRGS: Conteúdo, Coesão, Linguagem, Estrutura
-    conteudo = min(len(texto)/500,1) * 10
-    coesao = analisar_coesao(texto)/10
+    conteudo = min(len(texto) / 500, 1) * 10
+    coesao = analisar_coesao(texto) / 10
     gramatica = max(10 - analisar_gramatica(texto)/2, 0)
     estrutura = 10 if len(texto.split()) > 100 else 7
     
-    nota_total = round((conteudo + coesao + gramatica + estrutura)/4,1)
+    nota_total = round((conteudo + coesao + gramatica + estrutura) / 4, 1)
     
     feedback = {
-        "Conteúdo": round(conteudo,1),
-        "Coesão": round(coesao,1),
-        "Gramática": round(gramatica,1),
+        "Conteúdo": round(conteudo, 1),
+        "Coesão": round(coesao, 1),
+        "Gramática": round(gramatica, 1),
         "Estrutura": estrutura,
         "Nota final estimada": nota_total
     }
     return feedback
 
-# Streamlit interface
+# ---------------- Interface Streamlit ----------------
+
 st.title("Corretor de Redações - UFRGS (Simulado)")
 
 texto = st.text_area("Cole sua redação aqui:", height=300)
